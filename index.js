@@ -1,13 +1,22 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from "@supabase/supabase-js";
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-// import bodyParser from 'body-parser';
+// 
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import cookieParser from "cookie-parser";
 
-dotenv.config()
+dotenv.config();
+
+const JWT_SECRET = process.env.SUPER_KEY;
 
 const app = express();
-app.use(cors({ origin: "http://localhost:5173" }));
+app.use(cookieParser());
+app.use(cors({
+  origin: process.env.PROD_URL, // dev + prod
+  credentials: true, // allow sending cookies
+}));
 app.use(express.json());
 
 const port = 2000;
@@ -17,11 +26,24 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-async function getUsers(){
-    const { data, error } = await supabase
-        .from('users')
-        .select();
-    return data;
+function verifyToken(req, res, next) {
+  const token = req.cookies.token; // ✅ check cookies
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(403).json({ error: "Invalid token" });
+    req.user = decoded; // attach decoded JWT info
+    next();
+  });
+}
+
+app.get("/dashboard", verifyToken, (req, res) => {
+  res.json({ user: req.user.username });
+});
+
+async function getUsers() {
+  const { data, error } = await supabase.from("users").select();
+  return data;
 }
 
 async function getSpecificUser(login) {
@@ -38,33 +60,61 @@ async function getSpecificUser(login) {
   return data; // object { username, password }
 }
 
+app.get("/", (req, res) => {
+  res.redirect("/users");
+});
 
-app.get('/', (req,res)=>{
-    res.redirect('/users');
-})
+app.get("/users", async (req, res) => {
+  const data = await getUsers();
+  res.json(data);
+});
 
-app.get('/users', async (req, res)=>{
-    const data = await getUsers();
-    res.json(data);
-})
+app.post("/login", async (req, res) => {
+  const { login, password } = req.body;
 
-app.post('/login', async (req,res)=>{
-    const { login, password } = req.body;
-    try{
-        const user  = await getSpecificUser(login);
-        if (user && user.password === password){
-            res.json({ status: "logged", login: user.username });  
-        } else if (user && user.password != password){
-            res.json({ status: "pass", });
-        } else{
-            res.json({ status: "not", });
-        }
-    } 
-    catch (error){
-        console.log(error);
-        res.status(500).json({ status: error });
+  try {
+    const user = await getSpecificUser(login);
+    if (!user) {
+      return res.json({ status: "not" }); // user not found
     }
-})
+
+    // ✅ Compare entered password with hashed password in DB
+    const validPass = await bcrypt.compare(password.trim(), user.password);
+    if (!validPass) {
+      return res.json({ status: "pass" }); // wrong password
+    }
+
+    // ✅ Create JWT with username
+    const token = jwt.sign(
+      { id: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    // ✅ Save JWT in HTTP-only cookie (cannot be read by JS)
+    res.cookie("token", token, {
+      httpOnly: true,  // secure against XSS
+      secure: false,   // set true on HTTPS (hosting)
+      sameSite: "strict",
+      maxAge: 1000 * 60 * 60, // 1 hour, adjust as needed
+    });
+
+    res.json({ status: "logged", login: user.username });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ status: "error" });
+  }
+});
+
+app.post("/logout", (req, res) => {
+  res.cookie("token", "", {
+    httpOnly: true,
+    secure: false,      // true if using HTTPS
+    sameSite: "strict",
+    expires: new Date(0) // expire immediately
+  });
+  res.json({ status: "not" });
+});
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
