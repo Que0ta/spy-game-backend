@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-// 
+//
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
@@ -13,10 +13,12 @@ const JWT_SECRET = process.env.SUPER_KEY;
 
 const app = express();
 app.use(cookieParser());
-app.use(cors({
-  origin: process.env.PROD_URL, // dev + prod
-  credentials: true, // allow sending cookies
-}));
+app.use(
+  cors({
+    origin: process.env.PROD_URL, // dev + prod
+    credentials: true, // allow sending cookies
+  })
+);
 app.use(express.json());
 
 const port = 2000;
@@ -44,6 +46,12 @@ app.get("/dashboard", verifyToken, (req, res) => {
 async function getUsers() {
   const { data, error } = await supabase.from("users").select();
   return data;
+}
+
+async function registerUser(user, pass) {
+  const { error } = await supabase
+    .from("users")
+    .insert({  username: user, password: pass, balance: 0 });
 }
 
 async function getSpecificUser(login) {
@@ -93,8 +101,8 @@ app.post("/login", async (req, res) => {
 
     // ✅ Save JWT in HTTP-only cookie (cannot be read by JS)
     res.cookie("token", token, {
-      httpOnly: true,  // secure against XSS
-      secure: false,   // set true on HTTPS (hosting)
+      httpOnly: true, // secure against XSS
+      secure: false, // set true on HTTPS (hosting)
       sameSite: "strict",
       maxAge: 1000 * 60 * 60, // 1 hour, adjust as needed
     });
@@ -106,12 +114,19 @@ app.post("/login", async (req, res) => {
   }
 });
 
+app.post("/register", async (req, res) => {
+  const { login, password } = req.body;
+  const updatedPass = await bcrypt.hash(password, 10);
+  await registerUser(login, updatedPass);
+  return res.redirect("/");
+});
+
 app.post("/logout", (req, res) => {
   res.cookie("token", "", {
     httpOnly: true,
-    secure: false,      // true if using HTTPS
+    secure: false, // true if using HTTPS
     sameSite: "strict",
-    expires: new Date(0) // expire immediately
+    expires: new Date(0), // expire immediately
   });
   res.json({ status: "not" });
 });
