@@ -96,13 +96,13 @@ app.post("/login", async (req, res) => {
     const token = jwt.sign(
       { id: user.id, username: user.username },
       JWT_SECRET,
-      { expiresIn: "1h" }
+      { expiresIn: 1000*60*15 }
     );
 
     // ✅ Save JWT in HTTP-only cookie (cannot be read by JS)
     res.cookie("token", token, {
       httpOnly: true, // secure against XSS
-      secure: false, // set true on HTTPS (hosting)
+      secure: true, // set true on HTTPS (hosting)
       sameSite: "strict",
       maxAge: 1000 * 60 * 60, // 1 hour, adjust as needed
     });
@@ -124,7 +124,7 @@ app.post("/register", async (req, res) => {
 app.post("/logout", (req, res) => {
   res.cookie("token", "", {
     httpOnly: true,
-    secure: false, // true if using HTTPS
+    secure: true, // true if using HTTPS
     sameSite: "strict",
     expires: new Date(0), // expire immediately
   });
