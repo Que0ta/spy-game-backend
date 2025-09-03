@@ -104,7 +104,7 @@ app.post("/login", async (req, res) => {
       httpOnly: true, // secure against XSS
       secure: true, // set true on HTTPS (hosting)
       sameSite: "strict",
-      maxAge: 1000 * 60 * 60, // 1 hour, adjust as needed
+      maxAge: 1000 * 60 * 15, // 1 hour, adjust as needed
     });
 
     res.json({ status: "logged", login: user.username });
