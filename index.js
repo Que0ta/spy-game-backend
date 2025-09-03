@@ -3,7 +3,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 //
-import bcrypt from "bcrypt";
+import bcrypt, { compareSync } from "bcrypt";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 
@@ -57,7 +57,7 @@ async function registerUser(user, pass) {
 async function getSpecificUser(login) {
   const { data, error } = await supabase
     .from("users")
-    .select("username, password") // only select what you need
+    .select("*") // only select what you need
     .eq("username", login)
     .single(); // returns a single object instead of array
 
@@ -72,10 +72,26 @@ app.get("/", (req, res) => {
   res.redirect("/users");
 });
 
-app.get("/users", async (req, res) => {
-  const data = await getUsers();
-  res.json(data);
+app.get("/users", verifyToken ,async (req, res) => {
+  try {
+    const username = req.user.username; // from verifyToken middleware
+    const user = await getSpecificUser(username);
+
+    if (!user) {
+      return res.status(404).json({ status: "not found" });
+    }
+
+    // Send only necessary info (avoid sending password)
+    res.json({
+      username: user.username,
+      balance: user.balance,  // assuming user.balance exists
+    });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ status: "error" });
+  }
 });
+
 
 app.post("/login", async (req, res) => {
   const { login, password } = req.body;
