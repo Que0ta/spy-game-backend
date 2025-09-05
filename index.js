@@ -48,6 +48,11 @@ async function getUsers() {
   return data;
 }
 
+async function getWords() {
+  const { data, error } = await supabase.from("words").select("word");
+  return data;
+}
+
 async function registerUser(user, pass) {
   const { error } = await supabase
     .from("users")
@@ -146,6 +151,16 @@ app.post("/logout", (req, res) => {
   });
   res.json({ status: "not" });
 });
+
+app.get("/words", verifyToken, async (req, res)=> {
+  // console.log('fetch words');
+  const data = await getWords();
+  const wordList = [];
+  data.forEach((keyWord) => {
+    wordList.push(keyWord.word);
+  })
+  return res.json(wordList);
+})
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
