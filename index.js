@@ -6,6 +6,15 @@ import cors from "cors";
 import bcrypt, { compareSync } from "bcrypt";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
+import { rateLimit } from "express-rate-limit";
+
+const limiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1min
+  limit: 40, // Limit each IP to 40 requests per `window`
+  standardHeaders: "draft-8", // draft-6: `RateLimit-*` headers; draft-7 & draft-8: combined `RateLimit` header
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+  ipv6Subnet: 64, // Set to 60 or 64 to be less aggressive, or 52 or 48 to be more aggressive
+});
 
 dotenv.config();
 
@@ -48,6 +57,13 @@ async function getUsers() {
   return data;
 }
 
+async function insertNewWord(id, word) {
+  const { error } = await supabase
+    .from("users")
+    .update({ words: word })
+    .eq("id", id);
+}
+
 async function getWords() {
   const { data, error } = await supabase.from("words").select("word");
   return data;
@@ -56,7 +72,7 @@ async function getWords() {
 async function registerUser(user, pass) {
   const { error } = await supabase
     .from("users")
-    .insert({  username: user, password: pass, balance: 0 });
+    .insert({ username: user, password: pass, balance: 0 });
 }
 
 async function getSpecificUser(login) {
@@ -77,7 +93,7 @@ app.get("/", (req, res) => {
   res.redirect("/users");
 });
 
-app.get("/users", verifyToken ,async (req, res) => {
+app.get("/users", verifyToken, async (req, res) => {
   try {
     const username = req.user.username; // from verifyToken middleware
     const user = await getSpecificUser(username);
@@ -85,11 +101,10 @@ app.get("/users", verifyToken ,async (req, res) => {
     if (!user) {
       return res.status(404).json({ status: "not found" });
     }
-
     // Send only necessary info (avoid sending password)
     res.json({
       username: user.username,
-      balance: user.balance,  // assuming user.balance exists
+      balance: user.balance, // assuming user.balance exists
     });
   } catch (err) {
     console.log(err);
@@ -97,6 +112,34 @@ app.get("/users", verifyToken ,async (req, res) => {
   }
 });
 
+// MARK: add-word
+app.post("/add-word", verifyToken, limiter, async (req, res) => {
+  const username = req.user.username;
+  const wantedWord = req.body;
+  const user = await getSpecificUser(username);
+  const allWords = user.words || [];
+  const double = allWords.includes(wantedWord.word.toLowerCase());
+  if (double === false) {
+    allWords.push(wantedWord.word);
+    const insertio = await insertNewWord(user.id, allWords);
+  } else {
+    res.status(200).json({
+      status: "false",
+      data: allWords,
+    });
+  }
+  res.status(200).json({
+    status: "success",
+    data: allWords,
+  });
+});
+
+app.get("/custom", verifyToken, async (req, res) => {
+  const username = req.user.username;
+  const user = await getSpecificUser(username);
+  const allWords = user.words || [];
+  res.json(allWords);
+});
 
 app.post("/login", async (req, res) => {
   const { login, password } = req.body;
@@ -117,7 +160,7 @@ app.post("/login", async (req, res) => {
     const token = jwt.sign(
       { id: user.id, username: user.username },
       JWT_SECRET,
-      { expiresIn: 1000*60*15 }
+      { expiresIn: 1000 * 60 * 15 }
     );
 
     // ✅ Save JWT in HTTP-only cookie (cannot be read by JS)
@@ -152,15 +195,15 @@ app.post("/logout", (req, res) => {
   res.json({ status: "not" });
 });
 
-app.get("/words", verifyToken, async (req, res)=> {
+app.get("/words", verifyToken, async (req, res) => {
   // console.log('fetch words');
   const data = await getWords();
   const wordList = [];
   data.forEach((keyWord) => {
     wordList.push(keyWord.word);
-  })
+  });
   return res.json(wordList);
-})
+});
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
