@@ -195,6 +195,34 @@ app.post("/logout", (req, res) => {
   res.json({ status: "not" });
 });
 
+app.post("/delete-word", verifyToken, async (req, res) => {
+  const username = req.user.username;
+  const deleteWord = req.body.word;
+  const user = await getSpecificUser(username);
+  const words = user.words;
+  if (words.includes(deleteWord)) {
+    // console.log('exists!');
+    const { data, error } = await supabase
+      .from("users")
+      .select("words")
+      .eq("id", user.id)
+      .single();
+
+    if (!error) {
+      const newWords = data.words.filter((w) => w !== deleteWord);
+
+      await supabase
+        .from("users")
+        .update({ words: newWords })
+        .eq("id", user.id);
+    }
+    console.log(data, error);
+  } else {
+    console.log("not completed!");
+  }
+  res.json("Success!");
+});
+
 app.get("/words", verifyToken, async (req, res) => {
   // console.log('fetch words');
   const data = await getWords();
