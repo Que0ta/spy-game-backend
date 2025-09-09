@@ -91,7 +91,10 @@ async function getSpecificUser(login) {
 
 // --- Weighted random helpers ---
 function weightedRandomChoice(playerIds, weights) {
-  const totalWeight = playerIds.reduce((sum, id) => sum + (weights[id] || 1), 0);
+  const totalWeight = playerIds.reduce(
+    (sum, id) => sum + (weights[id] || 1),
+    0
+  );
   let random = Math.random() * totalWeight;
 
   for (const id of playerIds) {
@@ -256,61 +259,88 @@ app.get("/words", verifyToken, async (req, res) => {
 });
 
 // GET lobby data by ID (needs a double check)
-app.get("/lobby/:id", async (req, res) => {
-  const { id } = req.params;
+app.get("/lobby", verifyToken, async (req, res) => {
+  const admin = req.user.username;
 
   const { data, error } = await supabase
     .from("lobbies")
     .select("*")
-    .eq("id", id)
+    .eq("admin", admin)
     .single();
 
   if (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message, status: false });
   }
   // data should include: players (JSON), word, id
   res.json({
     lobbyId: data.id,
     word: data.word,
     players: data.players, // array of {id, name, role}
+    status: true
   });
 });
 
-// passing data to DB
-app.post("/game-start", verifyToken, async(req,res)=>{
-  const admin = req.user.username;
+// passing data to DB when new game is started
+app.post("/game-start", verifyToken, async (req, res) => {
+  const adminy = req.user.username;
   const { players, spyAmount, wordsList } = req.body;
 
   // Pick random word
-  const validWords = Object.keys(wordsList).filter(word => wordsList[word]);
+  const validWords = Object.keys(wordsList).filter((word) => wordsList[word]);
   const word = validWords[Math.floor(Math.random() * validWords.length)];
 
   // Pick spies
   const playerIds = Object.keys(players);
   const spyCount = Math.min(spyAmount.amount, playerIds.length);
-  const weights = Object.fromEntries(playerIds.map(id => [id, 1]));
+  const weights = Object.fromEntries(playerIds.map((id) => [id, 1]));
   const spyIds = chooseSpies(playerIds, spyCount, weights);
 
   // Build players array with roles
-  const playersWithRoles = playerIds.map(id => ({
+  const playersWithRoles = playerIds.map((id) => ({
     id,
     name: players[id],
-    role: spyIds.includes(id) ? "spy" : "civilian"
+    role: spyIds.includes(id) ? "spy" : "civilian",
   }));
 
-  // // Save into Supabase
-  const { data, error } = await supabase
+  // Needs a double lobby check (for 1 user)
+  const { check, err } = await supabase
     .from("lobbies")
-    .insert([{ word: word, players: playersWithRoles }]);
+    .select("*")
+    .eq("admin", adminy)
+    .single();
 
-  if (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Failed to save game" });
+  if (err) {
+    return res.status(500).json({ error: err.message });
+  } else if (check != undefined) {
+    // Save into Supabase
+    const { data, error } = await supabase
+      .from("lobbies")
+      .insert([{ word: word, players: playersWithRoles, admin: adminy }]);
+
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Failed to save game" });
+    }
+    res.json({ word, players: playersWithRoles });
+  } else {
+    // delete all previous
+    const { data, error } = await supabase
+      .from("lobbies")
+      .delete()
+      .eq("admin", adminy); // deletes ALL rows 
+
+    // add a new lobby
+    const { data2, error2 } = await supabase
+      .from("lobbies")
+      .insert([{ word: word, players: playersWithRoles, admin: adminy }]);
+
+    if (error2) {
+      console.error(error2);
+      return res.status(500).json({ error: "Failed to save game" });
+    }
+    res.json({ word, players: playersWithRoles });
   }
-
-  res.json({ word, players: playersWithRoles });
 });
-
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
