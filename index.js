@@ -57,6 +57,15 @@ async function getUsers() {
   return data;
 }
 
+async function getLobbyAdmin(adminUser) {
+  const { data, error } = await supabase
+    .from("lobbies")
+    .select("players") // replace with your column name
+    .eq("admin", adminUser);
+
+  return data[0].players;
+}
+
 async function insertNewWord(id, word) {
   const { error } = await supabase
     .from("users")
@@ -276,7 +285,7 @@ app.get("/lobby", verifyToken, async (req, res) => {
     lobbyId: data.id,
     word: data.word,
     players: data.players, // array of {id, name, role}
-    status: true
+    status: true,
   });
 });
 
@@ -300,6 +309,7 @@ app.post("/game-start", verifyToken, async (req, res) => {
     id,
     name: players[id],
     role: spyIds.includes(id) ? "spy" : "civilian",
+    status: "",
   }));
 
   // Needs a double lobby check (for 1 user)
@@ -327,7 +337,7 @@ app.post("/game-start", verifyToken, async (req, res) => {
     const { data, error } = await supabase
       .from("lobbies")
       .delete()
-      .eq("admin", adminy); // deletes ALL rows 
+      .eq("admin", adminy); // deletes ALL rows
 
     // add a new lobby
     const { data2, error2 } = await supabase
@@ -340,6 +350,26 @@ app.post("/game-start", verifyToken, async (req, res) => {
     }
     res.json({ word, players: playersWithRoles });
   }
+});
+
+app.post("/update-role", verifyToken, async (req, res) => {
+  const admin = req.user.username;
+  const [name, status] = req.body;
+
+  const dataOld = await getLobbyAdmin(admin);
+
+  dataOld.forEach((item) => {
+    if (item.name === name) {
+      item.status = status;
+    }
+  });
+
+  const { data, error } = await supabase
+    .from("lobbies")
+    .update({ players: dataOld })
+    .eq("admin", admin);
+
+  res.json(true);
 });
 
 app.listen(port, () => {
