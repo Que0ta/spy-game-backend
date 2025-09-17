@@ -84,6 +84,21 @@ async function registerUser(user, pass) {
     .insert({ username: user, password: pass, balance: 0 });
 }
 
+async function resetLobby(userAdmin) {
+  const { data, error } = await supabase
+  .from('lobbies')
+  .update({word: ''})
+  .eq('admin', userAdmin)
+  .select('*');
+
+  if (error) {
+    console.error('Error resetting lobby:', error.message);
+    return null;
+  }
+
+  return data || error;
+}
+
 async function getSpecificUser(login) {
   const { data, error } = await supabase
     .from("users")
@@ -371,6 +386,39 @@ app.post("/update-role", verifyToken, async (req, res) => {
 
   res.json(true);
 });
+
+app.post("/reset-lobby", verifyToken, async(req,res)=>{
+  const admin = req.user.username;
+  const resetStatus = resetLobby(admin);
+
+  res.json(resetStatus);
+})
+
+app.get("/get-results", verifyToken, async(req,res)=>{
+  const admin = req.user.username;
+  const data = await getLobbyAdmin(admin);
+  let gameWon = '';
+  let gameStop = false;
+  let playersLeft = 0
+  let spiesLeft = 0
+
+  data.forEach((item) =>{
+    if (item.status === '' && item.role === 'civilian') playersLeft ++;
+    if (item.status === '' && item.role === 'spy') spiesLeft ++;
+    // console.log(item);
+  })
+  
+  if (playersLeft <= spiesLeft){
+    gameStop = true;
+    gameWon = 'spies';
+  } else if (spiesLeft === 0){
+    gameStop = true;
+    gameWon = 'civilians';
+  }
+
+  res.json({gameWon});
+
+})
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
