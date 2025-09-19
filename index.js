@@ -372,27 +372,34 @@ app.post("/update-role", verifyToken, async (req, res) => {
   const [name, status] = req.body;
 
   const dataOld = await getLobbyAdmin(admin);
+  if (status === "guessed"){
+    dataOld.forEach((item) => {
+      if (item.role === 'civilian') {
+        item.status = "kicked";
+      }
+    });
+    
+    const { data, error } = await supabase
+      .from("lobbies")
+      .update({ players: dataOld })
+      .eq("admin", admin);
 
-  dataOld.forEach((item) => {
-    if (item.name === name) {
-      item.status = status;
-    }
-  });
-
-  const { data, error } = await supabase
-    .from("lobbies")
-    .update({ players: dataOld })
-    .eq("admin", admin);
-
-  res.json(true);
+    res.json(true);
+  } else {
+    dataOld.forEach((item) => {
+      if (item.name === name) {
+        item.status = status;
+      }
+    });
+  
+    const { data, error } = await supabase
+      .from("lobbies")
+      .update({ players: dataOld })
+      .eq("admin", admin);
+  
+    res.json(true);
+  }
 });
-
-app.post("/reset-lobby", verifyToken, async(req,res)=>{
-  const admin = req.user.username;
-  const resetStatus = resetLobby(admin);
-
-  res.json(resetStatus);
-})
 
 app.get("/get-results", verifyToken, async(req,res)=>{
   const admin = req.user.username;
@@ -401,7 +408,7 @@ app.get("/get-results", verifyToken, async(req,res)=>{
   let gameStop = false;
   let playersLeft = 0
   let spiesLeft = 0
-
+  
   data.forEach((item) =>{
     if (item.status === '' && item.role === 'civilian') playersLeft ++;
     if (item.status === '' && item.role === 'spy') spiesLeft ++;
@@ -415,9 +422,16 @@ app.get("/get-results", verifyToken, async(req,res)=>{
     gameStop = true;
     gameWon = 'civilians';
   }
-
+  
   res.json({gameWon});
+  
+})
 
+app.post("/reset-lobby", verifyToken, async(req,res)=>{
+  const admin = req.user.username;
+  const resetStatus = resetLobby(admin);
+
+  res.json(resetStatus);
 })
 
 app.listen(port, () => {
